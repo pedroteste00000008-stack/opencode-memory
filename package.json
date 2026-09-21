@@ -1,0 +1,33 @@
+{
+  "name": "opencode-memory",
+  "version": "0.1.0",
+  "description": "Long-term memory plugin for OpenCode using Laya + Embeddings + Reranking",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "lint": "eslint src/"
+  },
+  "keywords": [
+    "opencode",
+    "plugin",
+    "memory",
+    "laya",
+    "embeddings",
+    "reranking",
+    "rag"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@opencode/plugin": "latest"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "vitest": "^1.0.0"
+  }
+}
