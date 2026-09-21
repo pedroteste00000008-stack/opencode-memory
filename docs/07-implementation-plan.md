@@ -1,3 +1,6 @@
+> [!WARNING]
+> **Plano superseded como plano executável.** A pesquisa aprofundada de 2026-09-21 reabriu decisões fundamentais deste documento (modelo de memória, Laya PT/EN, retrieval híbrido, storage, hooks do OpenCode e worker Python). Preserve este arquivo como histórico, mas **não implemente as fases abaixo como estão**. Leia primeiro [08-deep-research-and-revised-architecture.md](08-deep-research-and-revised-architecture.md) e produza um plano v2 depois do benchmark.
+
 # Plano de Implementação
 
 ## Visão Geral
