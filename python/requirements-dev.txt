@@ -1,0 +1,10 @@
+# Dev / diagnostic extras: benchmark storage arms + FastAPI diag server.
+# The stdio worker (python/worker.py) is the architecture; FastAPI stays
+# only as a dev/diagnostic alternative (docs/08 §14).
+
+-r requirements.txt
+-r requirements-bench.txt
+
+fastapi>=0.141.1
+uvicorn>=0.53.0
+pydantic>=2.13.5

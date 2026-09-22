@@ -1,0 +1,21 @@
+# ML runtime: what the stdio worker loads to classify / embed / rerank.
+# Python >= 3.10 (floor set by laya + sentence-transformers).
+# Floors verified against PyPI on 2026-09-22; upper bounds are left to
+# each package's own metadata so the resolver stays flexible.
+#
+# Disk: torch + transformers pull several GB (CUDA wheels on Linux by
+# default). For a CPU-only box prefer:
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
+# *before* installing this file, then pip resolves the rest.
+# Checkpoints are NOT included here; fetch them with:
+#   python python/scripts/download_models.py
+
+laya>=0.3.5
+sentence-transformers>=6.1.0
+flashrank>=0.2.10
+
+# Used directly by python/scripts/download_models.py (also a transitive
+# dep of laya / transformers / sentence-transformers).
+huggingface-hub>=0.20.0
+
+numpy>=1.24.0
