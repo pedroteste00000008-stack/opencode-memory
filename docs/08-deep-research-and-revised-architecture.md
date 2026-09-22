@@ -580,10 +580,21 @@ Estas decisões podem orientar o próximo design sem esperar benchmark:
 5. evitar prompt hook para injeção automática;
 6. usar context hook para recall efêmero;
 7. suportar retrieval lexical + semântico;
-8. não somar/médias scores heterogêneos sem calibração;
+8. estruturar o retrieval como streams independentes e explicáveis, aptos a incluir lexical, dense, entity e graph, com rank fusion em vez de média direta de scores heterogêneos;
 9. preservar memória procedural/failure lessons;
-10. criar benchmark antes de congelar modelos/backends;
-11. tratar a implementação de `07-implementation-plan.md` como superseded até revisão.
+10. manter fallback para evidência bruta quando a camada consolidada não responder adequadamente;
+11. separar `kind` semântico de `tier` de retenção/uso;
+12. introduzir handoff de sessão como protocolo próprio, separado de memória permanente;
+13. modelar relações tipadas entre memórias/evidências sem exigir graph database no v0.1;
+14. introduzir pending writes para propostas que não devem virar conhecimento canônico imediatamente;
+15. permitir auto-improvement assíncrono sobre sessões concluídas, sempre atrás de gates explícitos de promoção;
+16. exigir fronteira tipada de sanitização antes de qualquer persistência de texto não confiável;
+17. exigir idempotência/replay seguro no pipeline de captura;
+18. manter índices derivados reconstruíveis e nunca tratá-los como fonte de verdade;
+19. fazer Laya atuar como kernel decisório de escrita/consolidação, não como retriever nem como autoridade sobre evidência determinística;
+20. não usar Laya por candidato no recall por padrão; esse estágio só retorna se benchmark reproduzível demonstrar ganho líquido;
+21. usar benchmark reproduzível como regression gate para mudanças de retrieval, consolidação e decisões do Laya;
+22. tratar a implementação de `07-implementation-plan.md` como superseded até revisão.
 
 ## 20. Decisões deliberadamente adiadas
 
@@ -622,15 +633,319 @@ Também precisam ser revalidadas antes de implementação:
 
 Antes de escrever o pipeline completo:
 
-1. especificar schema v1 de `EvidenceRecord` e `MemoryRecord`;
-2. definir operações de consolidação e invariantes;
-3. definir escopo e precedência;
-4. criar dataset mínimo versionado;
-5. implementar harness de benchmark isolado;
-6. medir storage/retrieval/modelos;
-7. somente então escrever o plano de implementação v2.
+1. especificar schema v1 de `EvidenceRecord`, `MemoryRecord`, `HandoffRecord` e `PendingMemoryRecord`;
+2. especificar `MemoryKind`, `MemoryTier`, relações tipadas e estados de validade/supersession;
+3. definir operações de consolidação e invariantes, incluindo `ADD`, `UPDATE`, `SUPERSEDE`, `NOOP`, `CONFLICT` e `REVIEW`;
+4. definir escopo, precedência, autoridade de origem e regras de sanitização;
+5. definir contrato de handoff com claim atômico/idempotente e consumo exatamente uma vez no nível lógico;
+6. criar dataset mínimo versionado que cubra retrieval, atualização, conflito, handoff, abstention, ruído e isolamento de escopo;
+7. implementar harness de benchmark isolado;
+8. medir storage, retrieval, modelos e participação do Laya;
+9. somente então escrever o plano de implementação v2.
 
-O objetivo é impedir que infraestrutura seja construída em torno de escolhas ainda não demonstradas.
+O objetivo é impedir que infraestrutura seja construída em torno de escolhas ainda não demonstradas e, ao mesmo tempo, garantir que os contratos centrais não precisem de uma migração estrutural logo após a primeira implementação.
+
+## 23. Incorporação seletiva do `ai-memory`
+
+O projeto `akitaonrails/ai-memory` foi analisado como referência de engenharia. A decisão adotada é **não fazer fork, não usar o projeto como backend e não copiar sua arquitetura inteira**. O `opencode-memory` continuará Laya-native e preservará o modelo `evidência -> candidato -> decisão -> memória versionada`.
+
+O objetivo é transplantar mecanismos maduros que resolvem problemas reais de memória de agentes, adaptando-os aos contratos do OpenCode e às decisões já tomadas neste documento.
+
+### 23.1 Princípio de assimilação
+
+Cada ideia externa deve cair em uma destas categorias:
+
+- **adotar** — o mecanismo resolve um problema que já existe no nosso domínio e cabe diretamente na arquitetura;
+- **adaptar** — o mecanismo é útil, mas precisa ser refeito em torno de Laya, OpenCode ou dos nossos contratos;
+- **benchmarkar** — há hipótese forte de ganho, porém custo/qualidade ainda precisam de medição;
+- **rejeitar por enquanto** — amplia escopo sem melhorar o núcleo que precisamos validar primeiro.
+
+A existência de uma feature no `ai-memory` não é justificativa suficiente para incorporá-la.
+
+### 23.2 Handoff é um protocolo separado de memória
+
+Estado transitório de execução não deve ser promovido automaticamente a memória semântica durável.
+
+O design deve introduzir `HandoffRecord` para continuidade entre sessões, contendo pelo menos, conceitualmente:
+
+- resumo operacional;
+- trabalho concluído;
+- tentativas que falharam;
+- perguntas/pendências abertas;
+- próximos passos;
+- projeto/repositório/worktree/branch;
+- último estado ou commit verificado;
+- owner/session de origem;
+- estado de claim/consumo.
+
+O handoff deve suportar claim atômico e idempotente. Duas sessões concorrentes não podem consumir o mesmo baton como se fossem a única sucessora.
+
+Memórias permanentes continuam servindo para conhecimento reutilizável; handoffs servem para continuidade imediata de trabalho.
+
+### 23.3 `kind` e `tier` são dimensões diferentes
+
+`MemoryKind` responde **o que a memória significa**:
+
+- preferência;
+- decisão;
+- fato;
+- restrição;
+- procedimento;
+- failure lesson;
+- project state;
+- relação.
+
+`MemoryTier` responde **como essa memória deve se comportar operacionalmente**:
+
+- `working` — estado corrente e de alta volatilidade;
+- `episodic` — eventos/experiências de sessões específicas;
+- `semantic` — conhecimento consolidado;
+- `procedural` — procedimento/experiência reutilizável.
+
+Uma `decision` pode ser `semantic`; um `failure_lesson` pode ser `procedural`; `project_state` normalmente nasce como `working`.
+
+Retenção, decay e promoção devem operar sobre tier + validade + confirmação, e não apenas sobre idade absoluta.
+
+### 23.4 Relações tipadas sem exigir graph database
+
+O schema v1 deve permitir relações explícitas entre registros, por exemplo:
+
+- `supports`;
+- `contradicts`;
+- `supersedes`;
+- `caused_by`;
+- `fixes`;
+- `depends_on`;
+- `derived_from`;
+- `related_to`.
+
+A lista final deve ser pequena e fechada no primeiro schema. Relações precisam de proveniência e não podem transformar inferência do modelo em fato sem marcação.
+
+Suportar relações não implica escolher graph database. Elas podem começar em tabelas/índices simples e ganhar uma engine de grafo apenas se o benchmark ou a complexidade real justificarem.
+
+### 23.5 Retrieval por streams independentes
+
+O recall deve evoluir de “lexical + dense” para um pipeline onde fontes de candidatos são independentes e explicáveis:
+
+```text
+query
+  |
+  +--> scope / validity / temporal filters
+  |
+  +--> lexical / FTS
+  |
+  +--> dense vectors
+  |
+  +--> entity matches
+  |
+  +--> relation/graph neighborhood
+          |
+          v
+       rank fusion
+          |
+    authority/validity
+          |
+     optional reranker
+          |
+   diversity + token budget
+          |
+   ephemeral context
+```
+
+Nem todo stream precisa estar habilitado no default inicial. O harness deverá medir ganho marginal, custo e falsos positivos de cada stream.
+
+A fusão deve usar uma técnica apropriada para rankings heterogêneos, como RRF, em vez de somar scores que não compartilham escala.
+
+### 23.6 Raw-evidence fallback
+
+Memória consolidada é uma representação derivada e pode omitir informação importante.
+
+Quando o retrieval de memória não encontrar resposta suficiente, o sistema deve poder consultar evidências brutas dentro do escopo permitido. Esse fallback:
+
+- não promove automaticamente a evidência a memória;
+- preserva proveniência;
+- respeita sanitização e retenção;
+- deve ser observável no modo `explain`;
+- precisa de orçamento próprio para não despejar histórico bruto no contexto.
+
+### 23.7 Retrieval explicável
+
+O comando/superfície `explain` deve poder reconstruir por que uma memória chegou ao contexto:
+
+- query/facets usados;
+- filtros de escopo, status e validade;
+- streams que recuperaram o item;
+- ranks antes/depois da fusão;
+- rerank, se houve;
+- autoridade/proveniência;
+- versão/supersession;
+- regras de diversity e orçamento;
+- motivo de descarte dos candidatos imediatamente abaixo quando útil para debug.
+
+Explicabilidade é requisito operacional e de benchmark, não apenas feature de interface.
+
+### 23.8 Laya como kernel decisório
+
+A incorporação das ideias do `ai-memory` reforça a separação de responsabilidades.
+
+O Laya é adequado para decisões tipadas como:
+
+- `should_store`;
+- `kind`;
+- `scope`;
+- `tier`;
+- temporalidade provável;
+- relação provável;
+- duplicata/novidade;
+- `ADD | UPDATE | SUPERSEDE | NOOP | CONFLICT | REVIEW`;
+- auto-accept vs pending review;
+- classificação de propostas do auto-improvement.
+
+O Laya **não** deve, por padrão:
+
+- gerar o texto canônico da memória;
+- calcular ranking lexical/dense;
+- substituir rank fusion;
+- rodar uma decisão separada para cada candidato de recall;
+- sobrepor evidência determinística de tool/test/git;
+- decidir sozinho que uma correção “funcionou”.
+
+Se uma `procedure` ou `failure_lesson` afirma que determinada correção foi validada, essa força deve vir da evidência observada de teste/build/tool, não de confiança do modelo.
+
+### 23.9 Pending writes e auto-improvement
+
+Sessões concluídas podem ser analisadas fora do hot path para descobrir conhecimento útil que não foi promovido durante a interação.
+
+Fluxo conceitual:
+
+```text
+completed session
+      |
+      v
+isolated extractor
+      |
+      v
+memory proposals
+      |
+      v
+     Laya
+  +---+----------------------------+
+  | NOOP | AUTO_ACCEPT | SUPERSEDE |
+  | CONFLICT | REVIEW              |
+  +---------------+----------------+
+                  |
+          canonical or pending
+```
+
+Regras:
+
+- o processo deve ser assíncrono ao fluxo de interação;
+- extrator e decisão não recebem autoridade para executar tools destrutivas;
+- propostas ambíguas ficam em pending;
+- promoção deve manter source ids e versões;
+- regras/procedimentos que dependem de sucesso técnico devem exigir evidência compatível;
+- a frequência do auto-improvement permanece uma decisão operacional posterior.
+
+### 23.10 Reinforcement e feedback
+
+O sistema deve conseguir registrar sinais como:
+
+- recuperada/usada;
+- marcada como útil;
+- marcada como irrelevante;
+- confirmada novamente por evidência;
+- contradita;
+- substituída.
+
+Esses sinais podem alimentar ranking, decay e revisão futura, mas não devem virar um “score mágico” acumulado indefinidamente. Pesos, janelas e normalização ficam sujeitos a benchmark para evitar viés de popularidade e feedback loops.
+
+### 23.11 Invariantes operacionais absorvidos
+
+Os seguintes princípios do `ai-memory` são adotados como requisitos de engenharia, adaptados ao nosso runtime:
+
+1. persistência deve ter um caminho de escrita serializável/single-writer ou garantia transacional equivalente;
+2. dado canônico e índices derivados não podem ficar em estados parcialmente atualizados após uma operação considerada concluída;
+3. captura automática deve ser bounded e não bloquear o agent loop por trabalho pesado;
+4. texto não confiável cruza uma fronteira explícita de sanitização antes da persistência;
+5. capture/retry deve ser idempotente;
+6. embeddings, FTS, entity index e relações são reconstruíveis a partir do estado canônico/evidência;
+7. identidade de modelo/versão acompanha índices derivados para detectar staleness;
+8. operações de reindex/rebuild não alteram a semântica canônica;
+9. efeitos de contexto recuperado são efêmeros e não devem voltar ao write path como evidência nova sem origem distinguível;
+10. concorrência entre sessões não pode destruir versões conflitantes nem causar consumo duplo de handoff.
+
+A implementação concreta desses invariantes depende do backend escolhido após benchmark.
+
+### 23.12 O que não será copiado agora
+
+Ficam explicitamente fora do núcleo inicial:
+
+- Markdown/wiki como source of truth canônica;
+- usar `ai-memory` como backend do plugin;
+- servidor compartilhado multi-user como requisito do v0.1;
+- OIDC/auth ladder completa;
+- grande superfície de CLI/admin;
+- managed workstreams como subsistema separado;
+- integrações com múltiplos harnesses que não o OpenCode;
+- TTL/decay com números congelados antes de benchmark;
+- graph database obrigatório;
+- Laya como filtro final obrigatório de cada memória recuperada.
+
+Esses itens podem ser revisitados quando houver necessidade observada, sem bloquear a arquitetura para evolução futura.
+
+### 23.13 Licença e provenance
+
+O `ai-memory` está sob licença MIT. A arquitetura pode ser estudada e ideias podem ser reimplementadas livremente.
+
+Nossa política para esta integração é preferir **reimplementação em torno dos nossos contratos**, não cópia literal. Se algum trecho substancial de código for transplantado no futuro, o commit correspondente deve identificar a origem e preservar os avisos exigidos pela licença MIT do projeto de Fabio Akita.
+
+A documentação deve manter o `ai-memory` creditado como referência arquitetural, sem atribuir a ele decisões que foram desenvolvidas independentemente neste projeto.
+
+### 23.14 Consequência para o design
+
+A arquitetura resultante permanece:
+
+```text
+OpenCode lifecycle
+        |
+ sanitize + dedupe
+        |
+ Evidence Store -------------------------------+
+        |                                      |
+ candidate extraction                          |
+        |                                      |
+       Laya                                    |
+  should-store / kind / scope / tier / relation|
+        |                                      |
+ existing-memory lookup                        |
+        |                                      |
+       Laya                                    |
+ ADD / UPDATE / SUPERSEDE /                    |
+ NOOP / CONFLICT / REVIEW                      |
+        |                                      |
+ canonical versioned memory                    |
+        |                                      |
+  +-----+-------+---------+                    |
+  | FTS | dense | entity  | relations          |
+  +-----+-------+---------+                    |
+        |                                      |
+     rank fusion                               |
+        |                                      |
+ authority + validity                          |
+        |                                      |
+ optional reranker                             |
+        |                                      |
+ diversity / token budget                      |
+        |                                      |
+ ephemeral context                             |
+                                               |
+ raw-evidence fallback <-----------------------+
+
+separate continuity path:
+session end -> HandoffRecord -> atomic claim -> next-session context
+```
+
+O ponto central permanece: **Laya decide políticas e mutações; evidência determina autoridade factual; mecanismos determinísticos fazem retrieval e versionamento; o benchmark decide otimizações e defaults.**
 
 ---
 
@@ -658,6 +973,11 @@ O objetivo é impedir que infraestrutura seja construída em torno de escolhas a
 
 ### Memória de agentes
 
+- ai-memory: https://github.com/akitaonrails/ai-memory
+- ai-memory — arquitetura: https://github.com/akitaonrails/ai-memory/blob/main/docs/ARCHITECTURE.md
+- ai-memory — invariantes operacionais: https://github.com/akitaonrails/ai-memory/blob/main/AGENTS.md
+- ai-memory — benchmarks: https://github.com/akitaonrails/ai-memory/blob/main/docs/benchmarks/README.md
+- ai-memory — licença MIT: https://github.com/akitaonrails/ai-memory/blob/main/LICENSE
 - LongMemEval: https://arxiv.org/abs/2410.10813
 - Mem0: https://arxiv.org/abs/2504.19413
 - A-MEM: https://arxiv.org/abs/2502.12110
