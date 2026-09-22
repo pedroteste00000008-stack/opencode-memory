@@ -1,0 +1,7 @@
+# Storage candidates compared by the benchmark harness (docs/08 §11, §17).
+# NOT part of the default install: SQLite (stdlib via node:sqlite) is the
+# provisional default and needs nothing. Install this file only to run
+# the LanceDB / ChromaDB comparison arms.
+
+lancedb>=0.39.0
+chromadb>=1.5.9
