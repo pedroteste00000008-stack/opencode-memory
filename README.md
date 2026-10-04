@@ -76,8 +76,18 @@ Sem memória, cada conversa no OpenCode começa do zero. Com este plugin, o assi
 ### 1. Instalar dependências Python
 
 ```bash
-pip install laya sentence-transformers flashrank chromadb
+# Worker funcional (Laya + embeddings + reranking + pytest)
+pip install -r python/requirements.txt
+
+# Só para rodar o comparativo de storages do benchmark (opcional)
+pip install -r python/requirements-bench.txt
+
+# Baixar checkpoints (~1.8 GB no total)
+python python/scripts/download_models.py
 ```
+
+> Em máquina sem GPU, instale o torch CPU **antes** para economizar GBs:
+> `pip install torch --index-url https://download.pytorch.org/whl/cpu`
 
 ### 2. Configurar o plugin no OpenCode
 
@@ -181,10 +191,12 @@ opencode-memory/
 | Fase | Status |
 |------|--------|
 | Pesquisa de componentes | ✅ Concluída |
-| Definição de arquitetura | ✅ Concluída |
+| Definição de arquitetura | ✅ Concluída (revisada em docs/08) |
 | Documentação | ✅ Concluída |
-| Implementação do plugin | ⏳ Pendente |
-| Testes | ⏳ Pendente |
+| Contratos schema v1 (slice 1) | ✅ Concluído |
+| Storage SQLite + worker stdio + retrieval (slice 2) | ✅ Concluído |
+| Embeddings densos + benchmark de modelos | ⏳ Pendente |
+| Tools + hooks + handoff wiring | ⏳ Pendente |
 | Publicação | ⏳ Pendente |
 
 ---

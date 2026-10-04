@@ -1,44 +1,43 @@
 /**
- * opencode-memory - Long-term memory plugin for OpenCode
+ * opencode-memory - Long-term memory plugin for OpenCode.
  *
- * Uses Laya (decision engine) + Sentence Transformers (embeddings)
- * + FlashRank (reranking) + ChromaDB (vector store)
+ * Revised architecture (docs/08): evidence != derived memory,
+ * single canonical store with kind/tier, scope as independent
+ * dimension, context-hook ephemeral injection, stdio Python worker.
  *
- * @package opencode-memory
- * @license MIT
+ * This entry point wires configuration + storage namespaces only.
+ * Retrieval / consolidation / tools / hooks land in later slices,
+ * behind the benchmark harness.
  */
 
 import { Plugin } from "@opencode/plugin"
+import { resolveConfig } from "./config.js"
+import { log } from "./utils/logger.js"
 
 export default Plugin.define({
   id: "opencode-memory",
 
   async setup(ctx) {
-    // ── Configuration ─────────────────────────────
-    const config = {
-      enabled: (ctx.options.enabled as boolean) ?? true,
-      embeddingModel: (ctx.options.embedding_model as string) ?? "all-MiniLM-L6-v2",
-      rerankerModel: (ctx.options.reranker_model as string) ?? "ms-marco-MiniLM-L-12-v2",
-      layaCheckpoint: (ctx.options.laya_checkpoint as string) ?? "convaiinnovations/laya",
-      maxMemories: (ctx.options.max_memories_per_session as number) ?? 50,
-      importanceThreshold: (ctx.options.importance_threshold as string) ?? "média",
-      pythonPort: (ctx.options.python_server_port as number) ?? 8787,
-    }
+    const config = resolveConfig(ctx.options as Record<string, unknown>)
 
     if (!config.enabled) {
-      console.log("[memory] Plugin disabled via configuration")
+      log("info", "Plugin disabled via configuration")
       return
     }
 
-    // ── Initialize ────────────────────────────────
-    console.log("[memory] Initializing OpenCode Memory Plugin")
-    console.log(`[memory] Embedding model: ${config.embeddingModel}`)
-    console.log(`[memory] Reranker model: ${config.rerankerModel}`)
-    console.log(`[memory] Laya checkpoint: ${config.layaCheckpoint}`)
-    console.log(`[memory] Python server: localhost:${config.pythonPort}`)
+    log("info", "Initializing OpenCode Memory Plugin (schema v1)")
+    log("info", `Storage backend (provisional): ${config.storageBackend}`)
+    log("info", `Embedding model (provisional): ${config.embeddingModel}`)
+    log("info", `Laya checkpoint: ${config.layaCheckpoint}`)
+    log(
+      "info",
+      `Python transport: ${config.pythonTransport}` +
+        (config.pythonTransport === "tcp"
+          ? ` (localhost:${config.pythonPort})`
+          : ""),
+    )
 
-    // ── Storage ───────────────────────────────────
-    await ctx.storage.set("config", config)
+    await ctx.storage.set("config", { ...config })
     await ctx.storage.set("initialized", true)
     await ctx.storage.set("stats", {
       totalMemories: 0,
@@ -46,19 +45,13 @@ export default Plugin.define({
       lastRecall: null,
     })
 
-    // ── Register tools ────────────────────────────
-    // TODO: Implement tools (Phase 4)
-    // await registerTools(ctx, config)
+    // Slices 2+: tools (remember/search/forget/explain), context-hook
+    // ephemeral recall, handoff protocol. See docs/08 §22.
 
-    // ── Register hooks ────────────────────────────
-    // TODO: Implement hooks (Phase 5)
-    // await registerHooks(ctx, config)
+    log("info", "Plugin initialized successfully")
 
-    console.log("[memory] Plugin initialized successfully")
-
-    // ── Cleanup ───────────────────────────────────
     return () => {
-      console.log("[memory] Plugin unloaded")
+      log("info", "Plugin unloaded")
     }
   },
 })

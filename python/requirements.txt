@@ -1,15 +1,6 @@
-# Core ML
-laya>=0.3.5
-sentence-transformers>=5.0.0
-flashrank>=0.2.0
+# Default install: working Python worker (ML runtime + test runner).
+# Python >= 3.10.
 
-# Vector Store
-chromadb>=0.5.0
+-r requirements-ml.txt
 
-# Server
-fastapi>=0.100.0
-uvicorn>=0.20.0
-pydantic>=2.0.0
-
-# Utils
-numpy>=1.24.0
+pytest>=9.1.1
